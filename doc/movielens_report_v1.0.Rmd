@@ -1,0 +1,1747 @@
+---
+title: \pagenumbering{gobble}\vspace{3.5in}Building a Recommendation System for Movies
+subtitle: "MovieLens 10M"
+author: "Omar Dahhani"
+date: "25-August-2020"
+output: 
+  pdf_document:
+    toc: false
+    toc_depth: 2
+    number_sections: true
+    keep_tex: true
+    fig_width: 7
+    fig_height: 6
+    fig_caption: true
+    fig_crop: false
+    df_print: kable
+    highlight: tango
+
+graphics: yes
+fontsize: 10pt
+linkcolor: blue
+urlcolor: blue
+geometry: margin=1in
+documentclass: article
+
+header-includes:
+  - \hypersetup{
+      pdfauthor={Omar Dahhani},
+      pdftitle={},
+      pdfsubject={},
+      pdfkeywords={},
+      pdfproducer={MacTex},
+      pdfcreator={PdfLaTeX},
+      bookmarksnumbered=true,
+      bookmarksopen=true,
+      bookmarksopenlevel=2,
+      pdfstartview=FitH,
+      pdfpagelayout=OneColumn,
+      unicode=true,
+      bookmarks=true,
+      pdfpagemode=UseOutlines,
+      pdfinfo={
+        CreationDate={D:20200620093000}
+      },
+      citecolor=cyan
+    }  
+  - \usepackage{wrapfig}
+  - \usepackage{esvect}
+  - \usepackage{booktabs}
+  - \usepackage{lscape}
+  - \usepackage{pdflscape}
+  - \usepackage{float}
+  - \usepackage{amsmath}
+  - \usepackage{eqnarray}
+  - \usepackage[ruled,vlined]{algorithm2e} 
+  - \usepackage{fancyhdr} 
+  - \usepackage[font=small,skip=0pt]{caption}
+  - \floatplacement{figure}{H}
+  - \newcommand{\hideFromPandoc}[1]{#1}
+  - \hideFromPandoc{
+      \let\Begin\begin
+      \let\End\end
+      \let\Vspace\vspace
+    }
+  - \renewcommand{\contentsname}{}\vspace{-2in}
+  - \renewcommand{\listfigurename}{}\vspace{-2in}
+  - \renewcommand{\listtablename}{}\vspace{-2in}
+  - \fancypagestyle{plain}{\pagestyle{firststyle}} 
+  - \fancypagestyle{firststyle} {
+      \fancyhf{}
+      \newcommand {\changefont} {\fontsize{6}{8}\selectfont}
+      \pagestyle{fancy}
+      \renewcommand{\headrulewidth}{0pt}
+        \IfFileExists{./edx-logo-header.png}{
+          \fancyfoot[LO]{\begin{minipage}[c]{2cm}\includegraphics[]{./edx-logo-header.png}\end{minipage}}
+        }{
+          `r if( !file.exists( "./edx-logo-header.png" ) ) try( download.file(url = "https://www.edx.org/sites/default/files/theme/edx-logo-header.png", destfile = "edx-logo-header.png", mode = 'wb') )`
+        }
+      \fancyfoot[CO]{\begin{minipage}[c]{.6\textwidth}\changefont Harvard Executive Education – Data Science Professional Certification Program\\\begin{center}– Capstone Project\end{center}\end{minipage}}
+
+    }
+  - \fancypagestyle{plain}{\pagestyle{firststyle}}
+
+
+
+---
+
+```{r global_options, R.options=knitr::opts_chunk$set( warning=FALSE, message=FALSE, echo = FALSE, dev = 'pdf', cache = FALSE, results=TRUE, include=TRUE, eval=TRUE ) }
+```
+
+```{r source code, include=FALSE}
+source("../R/movielens-core.R", local = knitr::knit_global(), chdir = TRUE)
+```
+
+```{r libraries, echo = FALSE, results = FALSE, include = FALSE, message = FALSE, warning = FALSE }
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(ggthemes)) install.packages("ggthemes", repos = "http://cran.us.r-project.org")
+if(!require(dplyr)) install.packages("dplyr", repos = "http://cran.us.r-project.org")
+if(!require(kableExtra)) install.packages("kableExtra", repos = "http://cran.us.r-project.org")
+if(!require(ggrepel)) install.packages("ggrepel", repos = "http://cran.us.r-project.org")
+if (!require(reshape2)) install.packages("reshape2", repos = "http://cran.us.r-project.org")
+```
+\newpage
+
+# Table of Content {.unnumbered}
+\tableofcontents
+
+\newpage
+
+## List of Figures {.unnumbered}
+\listoffigures
+
+## List of Tables {.unnumbered}
+\listoftables
+
+\newpage
+
+\pagenumbering{arabic} <!-- starts page numbering -->
+
+
+# Introduction
+Recommendation systems are an important class of machine learning algorithms with successful application  in business. The key concept is predict user preference related to an item, and then make usefull suggestions to users. Such way, user satisfaction is enhanced by helping him to find his interest among a large choice of items. Recommendation Engines become effective Marketing and User Capture tools.
+
+In October 2006, Netflix offered a challenge to the data science community: improve our recommendation algorithm by 10% and win a million dollars. In September 2009, the winners were announced. An overall description of the solution could be found [here](http://blog.echen.me/2011/10/24/winning-the-netflix-prize-a-summary/). The detailed winner  solution is described [here](http://www.netflixprize.com/assets/GrandPrize2009_ BPC_BellKor.pdf) .
+
+The Netflix prize contest is become notable for its numerous contributions to the recommendation systems enhancement using numerous models and techniques.
+
+In this project, we will create a Recommendation System for movies able to predict unknown user rating based on the known ratings in the data set. We will use a data provided by the online movie recommender service ['MovieLens'](https://movielens.org/), the 10M version. 
+
+We will apply Linear regression model with regularized movie, user, genre, time effects. We also use Matrix Factorization to optimize residuals. The evaluation is based on **R**oot **Mean** **S**quare **E**rror (**RMSE**) as a measurement.  
+
+We first began by constructing the data set from the compressed files, then we will explore data to get an insight about models to use.
+
+
+
+\newpage
+# Data preparation
+
+
+Data wrangling is used to build the data set from the zip files provided by MovieLens project. MoviLens 10M contains "`r nrow(movielens)`" ratings from year "`r year(min(as_datetime(movielens$timestamp)))`" to year "`r year(max(as_datetime(movielens$timestamp)))`" for "`r n_distinct(movielens$userId)`" users and "`r n_distinct(movielens$movieId)`" movies. 
+Once in memory, the movielens dataset containing the entire data is splitted into 2 sets:
+
+* working set: This set is used for training and testing the models, represents 90 % of the data. Called "edx".
+* validation set: Used for the final validation of our model, named "validation"
+
+```{r edx size,echo=FALSE}
+sapply(c("movielens","edx","validation"), function(data) {
+  get(data) %>% summarize(Ratings=nrow(.),
+                         Users=n_distinct(userId),
+                         Movies=n_distinct(movieId),
+                         "Start ratings year"=year(min(as_datetime(timestamp))),
+                         "Last ratings year"=year(max(as_datetime(timestamp))))
+}) %>% t()  %>%
+  knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    align = paste0( rep( "r", 5 ))) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ) )
+```
+\captionof{table}{\label{tab:general-stats}General Statistics about MovieLens data sets}
+
+\vspace{+5truemm}
+
+Let's split the working set in 2 sets:
+
+* train set: used to train the model, 90% of the working data set
+* test set: used to test the trained model, 10 % of the working data set.
+
+We make sure that movies and users in this set are also in train set in order to be able to compute the error between the estimated rating and the real rating.
+
+```{r train test set,echo=FALSE}
+sapply(c("train","test"), function(data) {
+  get(data) %>% summarize(Ratings=nrow(.),
+                         Users=n_distinct(userId),
+                         Movies=n_distinct(movieId),
+                         "Start ratings year"=year(min(as_datetime(timestamp))),
+                         "Last ratings year"=year(max(as_datetime(timestamp))))
+}) %>% t()  %>%
+  knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    align = paste0( rep( "r", 5 ))) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ) )
+```
+\captionof{table}{\label{tab:train-test-stats}Train and Test data sets}
+
+\clearpage
+
+# Methods and analysis
+In this section we will explain the process and techniques used, such as data exploration and visualization, some data patterns and theorical models information. We will use **R** language for development.
+
+\vspace{+3truemm}
+
+The data has 6 features:
+```{r names edx, echo=TRUE}
+names(edx)
+```
+\begin{minipage}{0.4\linewidth}
+\centering
+```{r rating distribution plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+movielens %>%
+     ggplot(aes(x = rating)) +
+     geom_bar() + 
+  theme_bw() + 
+  labs(title="Ratings Distribution",x="Ratings",y="Count")
+```
+\captionof{figure}{\label{fig:fig_ratings_distribution}Ratings Distribution} 
+\end{minipage}
+\hfill
+\begin{minipage}{0.6\linewidth}
+\centering
+```{r heatmap,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+sample_users_nbr <- 1000
+sample_movies_nbr <- 500
+
+user_ids <- sample(unique(edx$userId),sample_users_nbr, replace=FALSE)
+movie_ids <- sample(unique(edx$movieId),sample_movies_nbr, replace=FALSE)
+
+data_sample <-edx %>% 
+  filter(userId %in% user_ids & movieId %in% movie_ids) %>%
+  mutate(id=paste0(userId,"_",movieId))
+
+edx_sample <- expand.grid(userId=user_ids,movieId=movie_ids) %>% 
+  mutate(rating=NA,id=paste0(userId,"_",movieId),
+         movieId=factor(movieId),userId=factor(userId))
+edx_sample$rating[match(data_sample$id,edx_sample$id)] <- data_sample$rating 
+
+edx_sample %>% ggplot(aes(movieId,userId,fill=rating)) +
+  scale_fill_continuous(na.value='transparent') +
+  geom_tile(color='transparent') +
+  theme_bw() + 
+  coord_fixed( ratio = 1 ) +
+  theme(panel.grid = element_blank(),legend.position="none",
+        axis.text.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.ticks.y=element_blank()) +
+  ggtitle("Heatmap of ratings") +
+  ylab("Users") +
+  xlab("Movies")
+```
+\captionof{figure}{\label{fig:fig_ratings_heatmap}Ratings HeatMap} 
+\end{minipage}
+
+```{r sparse rate,echo=FALSE,eval=TRUE}
+sparse_perc = 100 * nrow(movielens)/
+  (n_distinct(movielens$userId) * n_distinct(movielens$movieId))
+```
+
+\vspace{+7truemm}
+
+Figure **\ref{fig:fig_ratings_distribution}** shows that ratings are numerical values between 0.5 and 5. Half star ratings are less common than whole star ratings. We can see that the majority of ratings are greater or equal to 3 with picks in 3 and 4 values. Figure **\ref{fig:fig_ratings_heatmap}** is a rating heatmap rating for a MovieLens sample of "`r sample_users_nbr`" users and "`r sample_movies_nbr`" movies. It shows how ratings are very sparse, the colored points represents the MovieLens ratings, which represents only "`r round(sparse_perc,2)`"% of possible ratings.      
+
+$~$
+
+We consider ratings as a matrix with users as rows and movies as columns $R_{u,i}$, it's dimension is "`r n_distinct(movielens$userId)`"_$X$_"`r n_distinct(movielens$movieId) `" .     
+
+$~$
+
+We will use 2 class of general models :
+
+1. Linear Regression model: We will predict ratings using other features like: users, movie, genre, time. Then we use regularization technique to penalize features with few ratings.
+
+2. Matrix Factorization: Transform the matrix to reduce the dimensions. Matrix factorization algorithms detect patterns between clusters of users and clusters of movies explaining for the variation without losing too much info in the true ratings. 
+
+```{r gc1,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(data_sample,edx_sample,sample_users_nbr,sample_movies_nbr,user_ids,movie_ids,sparse_perc)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+## Naive approch
+We simply assign the same value "$r$" to all rating to predict. 
+\begin{equation}
+Y_{u, i} = r + \epsilon_{u,i}
+\end{equation}
+With: 
+
+* $r$: a fix value.
+* $\epsilon_{u,i}$: an independent errors variables of the distribution with the mean at 0.  
+If we consider $N$ the total ratings number, the RMSE formula is:
+
+$$RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - r) ^2}$$
+
+To find the optimal r value that minimizes RMSE, we use calculus and compute the r that make the derivative null:
+
+\begin{eqnarray}
+\frac{\partial RMSE}{\partial r} &= \frac{\partial \sqrt{ \frac{1}{N} \sum\limits^{N} (y_{u,i} - r) ^2}} {\partial r} 
+= \frac{\partial \sqrt{ \frac{1}{N} (\sum\limits^{N} y_{u,i} ^2 + \sum\limits^{N} r ^2 - 2\sum\limits^{N} y_{i}r)}} {\partial r} \nonumber\\
+&= \frac{2\sum\limits^{N}r - 2 \sum\limits^{N}y_{u,i}}{2N\sqrt{ \frac{1}{N} \sum\limits^{N} (y_{i} - r) ^2} } \nonumber\\
+&= \frac{rN - \sum\limits^N y_{u,i}}{N\sqrt{ \frac{1}{N} \sum\limits^{N} (y_{u,i} - r) ^2} } \nonumber\\
+&\frac{\partial RMSE}{\partial r} =0 \iff rN - \sum\limits^N y_{u,i} = 0 \iff \nonumber \\ 
+&r= \frac{\sum\limits^N y_{u,i}}{N} \label{eq:calculus_naif}
+\end{eqnarray}
+
+We just found that $r$ value which minimizes the RMSE is $\mu$, the average value of $y_{u,i}$.
+
+$~$
+
+Our models become:
+
+\begin{equation}
+Y_{u, i} = \mu + \epsilon_{u,i} \label{eq:eq_naive_model}
+\end{equation}
+
+$~$
+
+Using Central Limit Theorem "_CLT_", we can estimate $\mu$ using the average value on the training set.
+Our estimated rating is:
+$$\hat{y}_{u, i} = \hat{\mu} $$
+where the symbol $\hat{}$ is for an "_estimate_".  
+
+The RMSE equation becomes:
+
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - \hat{\mu})^2 } = \sqrt{ \frac{1}{N} \sum_{u,i} \epsilon_{u,i}^2 } \label{eq:RMSE_naif}
+\end{equation}
+
+The RMSE on train set is equal to the standard deviation _$\sigma$_ of the training set.
+
+```{r naive model,echo=FALSE,eval=TRUE}
+naive_model <-get_naive_model(train_set,test_set)
+mu_hat <- naive_model$mu_hat
+sd <- sd(train_set$rating)
+```
+The overall average of the ratings in train data set  $\hat\mu$  is `r mu_hat` and the standard deviation is `r sd`.
+```{r result naive,echo=FALSE,eval=TRUE}
+rmse_test <- naive_model$rmse
+rmse_results <- tibble(method = "Naive: Just the average", 
+                           rmse_test = rmse_test, perc_test = NA)
+```
+
+We can compute the RMSE on test set using the formula **\eqref{eq:RMSE_naif}**. Our first model has `r rmse_test` as RMSE, it's close to the standard deviation computed above.
+
+```{r clean naive,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(rmse_test,sd)
+```
+
+  
+  
+\clearpage
+
+## Movie effect
+Let's examine movies training data.
+\vspace{+3truemm}
+\begin{minipage}{0.65\linewidth}
+\centering
+```{r movie average plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+movie_avg <- train_set %>% group_by(movieId) %>%
+  summarize(avg=mean(rating))
+movie_avg %>%
+  ggplot(aes(avg)) +
+  geom_histogram(binwidth = 0.3) +
+  theme_bw() +
+  labs(title = "Movie average distribution ", 
+       x="Movie rating average ",
+       y="Count")
+```
+\captionof{figure}{\label{fig:fig_movie_avg_distribution}Movie ratings Distribution}
+\end{minipage}
+\hfill
+\begin{minipage}{0.35\linewidth}
+\centering
+```{r movies average quantile,echo=FALSE}
+knitr::kable(quantile(movie_avg$avg),
+             format = "latex", 
+             booktabs = TRUE,
+             row.names = TRUE,
+             align = paste0( rep( "c", 2))) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ))
+median_movie_avg <- median(movie_avg$avg)
+avg_movie_avg <- mean(movie_avg$avg)
+```
+\captionof{table}{\label{tab:tab_movie_avg_quantile}Movie avg quantiles}
+\end{minipage}
+
+\vspace{+4truemm}
+
+Figure **\ref{fig:fig_movie_avg_distribution}** shows that the movie averages fit a normal distribution with an average of `r round(avg_movie_avg,2)` and  median of `r round(median_movie_avg,2)`. 75% of movies has a rating average less than `r round(quantile(movie_avg$avg)[3],2)`  as we see in the table **\ref{tab:tab_movie_avg_quantile}**.
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.6\linewidth}
+\centering
+```{r movies ratings count density, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+movie_rating_count <- train_set %>% group_by(movieId) %>%
+  summarize(n=n())
+movie_rating_count %>%
+  ggplot(aes(n,..count..)) +
+  geom_histogram(binwidth =50,color="blue") + 
+  theme_bw()  + labs(title = "Ratings count density for movies",x="Ratings count",
+                     y="Movies Count" )
+```
+\captionof{figure}{\label{fig:fig_movie_rating_count}Movie rating count distribution}
+\end{minipage}
+\hfill
+\begin{minipage}{0.4\linewidth}
+\centering
+```{r movies rating quantile,echo=FALSE}
+knitr::kable(quantile(movie_rating_count$n),
+             format = "latex", 
+             booktabs = TRUE,
+             row.names = TRUE,
+             align =  rep( "c", 2)) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ) )
+```
+\captionof{table}{\label{tab:tab_movie_rating_quantiles}Movie ratings quantiles}
+\end{minipage}
+
+\vspace{+4truemm}
+
+Figure **\ref{fig:fig_movie_rating_count}** shows a great volatility in movies ratings: few movies have a lot of ratings, and the majorities have fewer. The table **\ref{tab:tab_movie_rating_quantiles}** shows that 50 % of the movies have been rated less than `r round(median(movie_rating_count$n),0)` times.  
+
+\vspace{+3truemm}
+
+There is a movie effect that influences the predicted rating due to some movie are rated more or less than others. We enhance the previous linear model **\eqref{eq:eq_naive_model}** by adding the movie effect (or bias), the model will be:
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + \epsilon_{u,i} \label{eq:bi_model}
+\end{equation}
+
+with
+
+* $\mu$: the average of all the ratings
+* $b_{i}$: the movie effect for the movie "_i_", called also _"bias"_ for movie "_i_"
+* $\epsilon_{u,i}$: an independent errors variables of the distribution with the mean at 0. A good model should minimize the standard deviation of this variable.  
+
+It's possible to use linear regression methods such "_lm_" to fit this model, but we avoid because of the huge processing power needed to compute such data set. Instead, we use calculus as in the previous model **\eqref{eq:calculus_naif}**, to find the $b_{i}$ value that minimize the $RMSE$:
+$$
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - ({\mu} + {b}_{i}))^2 }
+$$
+The optimal $b_{i}$ is:
+$$b_{i} = \frac{1}{n_{i}} \sum\limits^{n_{i}} (y_{u,i} - {\mu})$$
+with $n_{i}$ is the ratings number for the movie $i$.  
+
+We can estimate $b_{i}$ on train data set: 
+\begin{equation}
+\hat{b}_{i} =  \frac{1}{n_{i}} \sum\limits^{n_{i}} (y_{u, i} - \hat{\mu}) \label{eq:bi_formula} 
+\end{equation}
+
+with:
+
+* $n_{i}$: the ratings number for the movie $i$ in the train data set 
+* $\hat{\mu}$: the overall average in the train data set
+
+Our estimated rating is:
+\begin{equation}
+\hat{y_{u, i}} = \hat{\mu} + \hat{b}_{i} \label{eq:bi_prediction_formula}
+\end{equation}
+The RMSE equation becomes:
+
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - (\hat{\mu} + \hat{b}_{i}))^2 } \label{eq:rmse_bi_formula}
+\end{equation}
+Let's compute the estimated movie bias in the train set using the formula **\eqref{eq:bi_formula}**:
+```{r movie_bias1,echo=TRUE,eval=FALSE,include=TRUE}
+# movie bias estimation on train set 
+movie_bias <- train_set %>% group_by(movieId) %>%
+  summarize(bi_hat = mean(rating - mu_hat))
+```
+We can compute the prediction in the test set using the formula **\eqref{eq:bi_prediction_formula}**:
+```{r movie_bias2,echo=TRUE,eval=FALSE,include=TRUE}
+# compute the predicted rating on test set using the bi_hat and mu_hat
+prediction_test <- test_set %>%
+  left_join(movie_bias, by = "movieId") %>%
+  mutate(rating_hat = (mu_hat + bi_hat))
+```
+
+```{r result movie effect,echo=FALSE,eval=TRUE}
+movie_bias_model <- get_movie_bias_model(train_set,test_set,lambda=0,naive_model)
+rmse_test<- movie_bias_model$rmse
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Movies effects", 
+                                 rmse_test = rmse_test,
+                                 perc_test = 100 * (last(rmse_results$rmse_test)-rmse_test) /
+                                   last(rmse_results$rmse_test)))
+```
+Now we have the predicted ratings on test set, which is a known data, we can compute the RMSE using the formula **\eqref{eq:rmse_bi_formula}**. We obtain RMSE=`r rmse_test` which is `r round(last(rmse_results$perc_test),2) `% lower than the previous one.
+
+```{r gc2,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(movie_rating_count,movie_avg,rmse_test,avg_movie_avg,median_movie_avg)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+
+\clearpage
+
+## User effect
+Let's examine how would user could influence our predictions, starting with exploring the data.
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.65\linewidth}
+\centering
+```{r user average plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+user_avg <- train_set %>% group_by(userId) %>%
+  summarize(avg=mean(rating))
+user_avg %>%
+  ggplot(aes(avg)) +
+  geom_histogram(binwidth = 0.2) +
+  theme_bw() +
+  labs(title = "User average distribution ", 
+       x="User rating average ",
+       y="Count")
+```
+\captionof{figure}{\label{fig:fig_user_avg_distribution}User average ratings distribution}
+\end{minipage}
+\hfill
+\begin{minipage}{0.35\linewidth}
+\centering
+```{r user average quantile,echo=FALSE}
+knitr::kable(quantile(user_avg$avg),
+             format = "latex", 
+             booktabs = TRUE,
+             row.names = TRUE,
+             align = rep( "c", 2)) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ))
+user_avg_avg <-mean(user_avg$avg)
+user_avg_median <- median(user_avg$avg)
+```
+\captionof{table}{\label{tab:tab_user_avg_quantiles}User avg quantiles}
+\end{minipage}
+
+\vspace{+3truemm}
+
+Figure **\ref{fig:fig_user_avg_distribution}** shows that the user averages fit a normal distribution with an average of `r round(user_avg_avg,2)` and  median of `r round(user_avg_median,2)`. 75% of users has a rating average less than `r round(quantile(user_avg$avg)[3],2)` as we see in the table **\ref{tab:tab_user_avg_quantiles}**.
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.6\linewidth}
+\centering
+```{r user ratings count density, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+user_rating_count <- train_set %>% group_by(userId) %>%
+  summarize(n=n())
+user_rating_count %>%
+  ggplot(aes(n,..count..)) +
+  geom_histogram(binwidth =50,color="blue") + 
+  theme_bw()  + labs(title = "Ratings count density for users",x="Ratings count",
+                     y="Users Count" )
+```
+\captionof{figure}{\label{fig:fig_user_rating_count}User rating count distribution}
+\end{minipage}
+\hfill
+\begin{minipage}{0.4\linewidth}
+\centering
+```{r user rating quantile,echo=FALSE}
+knitr::kable(quantile(user_rating_count$n),
+             format = "latex", 
+             booktabs = TRUE,
+             row.names = TRUE,
+             align = rep( "c", 2)) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ) )
+```
+\captionof{table}{\label{tab:tab_user_rating_quantiles}User ratings quantiles}
+\end{minipage}
+
+\vspace{+3truemm}
+
+Figure **\ref{fig:fig_user_rating_count}** shows a great volatility in user ratings: few users are very active with a lot of ratings, the big majority has few ratings. The table **\ref{tab:tab_user_rating_quantiles}** shows, 50 % of the users have rated less than `r round(median(user_rating_count$n),0)` movies. Users has rated at least `r min(user_rating_count$n)` movies.  
+
+\vspace{+3truemm}
+
+There is a user effect that influences the predicted rating due to some user's ratings are more or less generous than others. We could enhance our linear model **\eqref{eq:bi_model}** by introducing a new feature to get better prediction, we add the user bias as a parameter of the model:
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + b_{u}+ \epsilon_{u,i} \label{eq:bu_model}
+\end{equation}
+with:
+
+* $\mu$: the average of all the ratings
+* $b_{i}$: the movie effect for the movie "_i_", called also _"bias"_ for movie "_i_"
+* $b_{u}$: the user effect for the user "_u_", called also _"bias"_ for user "_u_"
+* $\epsilon_{u,i}$: an independent errors variables of the distribution with the mean at 0.   
+
+
+As we have done before **\eqref{eq:calculus_naif}**, we use calculus to compute $b_{u}$ value that minimizes the $RMSE$:
+
+$$
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - ({\mu} + {b}_{i} + {b}_{u} )) ^2 }
+$$
+
+The optimal $b_{u}$ is:
+$$
+b_{u}=\frac{1}{n_{u}} \sum\limits^{n_{u}} (y_{u,i} - {b_{i}} - {\mu}) 
+$$
+with $n_{u}$ is the ratings number of the user $u$.  
+We can estimate  $b_{i}$ on train data set: 
+\begin{equation}
+\hat{b_{u}} = \frac{1}{n_{u}} \sum\limits^{n_{u}} (y_{u,i} - \hat{b_{i}} - \hat{\mu}) \label{eq:bu_formula}
+\end{equation}
+with:
+
+* $n_{u}$: the ratings number for the user $u$ in the train data set 
+* $\hat{b_{i}}$: the estimation of movie bias $b_{i}$ in the train data set **\eqref{eq:bi_formula}**
+* $\hat{\mu}$: the overall average in train data set
+
+
+Our estimated rating is:
+
+\begin{equation}
+\hat{y_{u, i}} = \hat{\mu} + \hat{b_{i}} + \hat{b_{u}} \label{eq:bu_prediction_formula}
+\end{equation}
+The RMSE equation becomes:
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - (\hat{\mu} + \hat{b}_{i} + \hat{b}_{u} )) ^2 } \label{eq:rmse_bu_formula}
+\end{equation}
+
+This code computes the estimated user bias in the train set using the formula **\eqref{eq:bu_formula}**:
+```{r user_bias1,echo=TRUE,eval=FALSE, warning=FALSE,include=TRUE}
+  # compute user bias estimation
+user_bias <- train_set %>%
+  left_join(movie_bias, by = "movieId") %>%
+  group_by(userId) %>%
+  summarize(bu_hat = mean(rating - mu_hat - bi_hat))
+```
+We can compute the prediction in the test set using the formula **\eqref{eq:bu_prediction_formula}**:
+```{r user_bias2,echo=TRUE,eval=FALSE,include=TRUE}
+  # compute the predicted rating on test set using the bi_hat, bu_hat and mu_hat
+prediction_test <- test_set %>%
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  mutate(rating_hat = (mu_hat + bi_hat + bu_hat))
+```
+
+```{r result user effect,echo=FALSE,eval=TRUE}
+user_bias_model <- get_user_bias_model(train_set,test_set,lambda=0,movie_bias_model)
+rmse_test <- user_bias_model$rmse
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Movies and Users effects", 
+                                 rmse_test = rmse_test,
+                                 perc_test= 100 * (last(rmse_results$rmse_test) - rmse_test)/last(rmse_results$rmse_test)))
+```
+Now we have the predicted ratings on test set, we can compute the RMSE using the formula **\eqref{eq:rmse_bu_formula}**. We obtain RMSE= `r rmse_test` which is `r round(last(rmse_results$perc_test),2)`% lower than the previous result. We are progressing.
+```{r gc3,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(user_avg, user_rating_count,rmse_test,user_avg_avg,user_avg_median)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+## Genre effect
+Each movie have 1 or up to 8 genres. Let's explore the genres data:
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r genres count plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+train_set %>% mutate(genres_count=str_count(genres,"\\|")+1)  %>%
+  distinct(genres_count,movieId) %>% 
+  ggplot(aes(genres_count)) + 
+  geom_bar() + 
+  theme_bw() +
+  labs(title="Movies by genres count", x="Movie genres count", y="Movies")
+```
+\captionof{figure}{\label{fig:fig_genre_count_distribution}Genres count distribution}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r genres count average plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+train_set %>% 
+  mutate(genres_count=str_count(genres,"\\|")+1)  %>%
+  group_by(genres_count) %>% summarize(avg=mean(rating), n=n()) %>%
+  ggplot(aes(x=genres_count,y=avg )) + 
+  geom_point(aes(size=n, fill=genres_count),shape=21) +
+  geom_hline(yintercept = mu_hat, color="blue") +
+  scale_fill_gradientn(name="Ratings", label=c("200 000","1 000 000","2 400 000"),breaks=seq(1,8,length.out = 3),colors = RColorBrewer::brewer.pal(9, "PuBuGn")) +
+  scale_size_continuous(name="Ratings",label=c("200 000","1 000 000","2 400 000"), breaks=c(2e5,1e6,2.4e6)) +
+  guides(fill=guide_legend() ,size=guide_legend()) +
+  theme_bw() +
+  theme(legend.position = "bottom",legend.title = element_text(color="blue")) +
+  labs(title="Rating avergae by genres count", y="Rating average", x="Movie genres count")
+```
+\captionof{figure}{\label{fig:fig_genre_average_distribution}Rating average vs Genres and Rating count}
+\end{minipage}
+
+\vspace{+3truemm}
+
+The figure **\ref{fig:fig_genre_count_distribution}** shows that almost one third of movies has only one associated genre and one third only have 3 genres or more. The plot
+**\ref{fig:fig_genre_average_distribution}** shows that movies with 3 to 7 genres has a higher rating average than the overall rating mean "`r round(mu_hat,2)`", we can see that there is no clear correlation between the rating average and rating count by genre.  
+"_Genres_" feature is a "_$|$_" separated data, we need to transform it to get a tidy format of the dataset for the following reports and ratings prediction.
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r get genre model, eval=TRUE,echo=FALSE}
+train_set_sep <- train_set %>% separate_rows(genres, sep = "\\|")
+test_set_sep <- test_set %>% separate_rows(genres, sep = "\\|")
+genre_bias_model <- get_genre_bias_model(train_set,test_set,train_set_sep,test_set_sep,lambda=0,user_bias_model)
+```
+
+```{r genres box plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+train_set_sep %>%
+  mutate(genres=reorder(genres,rating,FUN=median)) %>%
+  ggplot(aes(genres,rating,fill= as.numeric(factor(genres)))) +
+  geom_boxplot(linetype = "1F",outlier.shape = 1) +
+  stat_boxplot(aes(ymin = ..lower.., ymax = ..upper..)) +
+  scale_fill_distiller(palette="PuBuGn") + 
+  geom_text(data=. %>% group_by(genres) %>% mutate(n=n()) %>% distinct(genres,n) ,
+            mapping=aes(x=genres,y=2,label=n,size=n,color=as.numeric(factor(genres))),
+            angle= 90) +
+  scale_color_distiller(palette="PuBuGn") +
+  scale_size(range=c(3,5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1),legend.position ="none") +
+  labs(title="Rating boxplot and counts by movie genre",y="Rating",x="")
+```
+\captionof{figure}{\label{fig:fig_genre_boxplot}Genres Boxplot and count}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r genres avg plot,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+train_set_sep %>% group_by(genres) %>% 
+  summarize(avg=mean(rating),n=n()) %>%
+  mutate(genres=reorder(genres,avg,FUN=mean)) %>%
+  ggplot(aes(x=genres,y=avg)) +
+  geom_point(aes(fill=as.numeric(factor(genres)),size=n),shape=21) +
+  geom_hline(yintercept = mu_hat,color="blue") +
+  scale_fill_distiller(name="Count",label= c("200 000","1 000 000","2 500 000"), direction =-1,palette="PuBuGn",breaks=seq(1,20,length.out = 3)) +
+  scale_size_continuous(name="Count",label=c("200 000","1 000 000","2 500 000"), breaks=c(2e5,1e6,2.5e6)) +
+  guides(fill=guide_legend() ,size=guide_legend()) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90,hjust = 1),legend.position = "bottom",legend.title = element_text(color="blue")) +
+  labs(title="Rating avergae by movie genres", y="Rating average", x="") + 
+  coord_flip()
+genre_avg_range <- train_set_sep %>% 
+  group_by(genres) %>% 
+  summarize(avg=mean(rating),n=n()) %>% pull(avg) %>% range()
+```
+\captionof{figure}{\label{fig:fig_genre_average}Genres rating average}
+\end{minipage}
+
+\vspace{+3truemm}
+
+In the plot **\ref{fig:fig_genre_boxplot}** we can see that "_Drama_" and "_Comedy_" summarize more than the half of the ratings. The last 6 categories constitute less than 10 % of all the ratings. We can notice that there are some movie's categories with more user rating than others. We will need to do regularization to take in consideration the real weight of the category.The median of all the categories is between 3.5 and 4. The less rated movie has the median higher than the others.  
+The plot **\ref{fig:fig_genre_average}** shows us that the average ratings for movie genres vary from `r round( genre_avg_range[1],2)` to `r round(genre_avg_range[2],2)`. Less viewed genres have tendency to have higher rating average over the overall average (the blue line in the plot).   
+
+Movie's genres has some effect on the movie ratings. We could enhance our model **\eqref{eq:bu_model}** by introducing the "_Genre bias_": 
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + b_{u}+ \sum_{k=1}^{K}{x_{u,i}^{k}\beta_{k}} + \epsilon_{u,i} \nonumber
+\end{equation}
+with:
+
+* $\mu$: the average of all the ratings
+* $b_{i}$: the movie effect for the movie "_i_", called also _"bias"_ for movie "_i_"
+* $b_{u}$: the user effect for the user "_u_", called also _"bias"_ for user "_u_"
+* $g_{u,i}$: the genre for user "_u_"'s rating of movie "_i_"
+* $\beta_{k}$: the genre effect for the genre "_k_", called also _"bias"_ for genre "_k_"
+* $x_{u,i}^{k} = 1$ if $g_{u,i}$ is equal to genre $k$, and to 0 elsewhere
+* $\epsilon_{u,i}$: an independent errors variables of the distribution with the mean at 0. 
+
+This model sums the genre effects if a movie has more than one genre.    
+For simplification, let's define $b_{g}=\sum_{k=1}^{K}{x_{u,i}^{k}b_{k}}$ as the sum of all the genre effects related to the movie "_i_", our model becomes:
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + b_{u}+ b_{g} + \epsilon_{u,i} \label{eq:bg_model}
+\end{equation}
+
+$~$
+
+As we have done before **\eqref{eq:calculus_naif}**, we use calculus to compute $b_{g}$ value that minimizes the $RMSE$:
+
+$$RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - ({\mu} + b_{i} + b_{u} + b_{g} )) ^2 }$$
+The optimal $b_{g}$ is:
+
+$$b_{g}=\frac{1}{n_{g}} \sum\limits^{n_{g}} (y_{u,i} - {b_{i}} - {b_{u}} - {\mu})$$ 
+
+with $n_{g}$ is the ratings number for the genre $g$.  
+
+\vspace{+3truemm}
+
+We can estimate  $b_{g}$ on train data set: 
+
+\begin{equation}
+\hat{b_{g}} = \frac{1}{n_{g}} \sum\limits^{n_{g}} (y_{u,i} - \hat{b_{i}} - \hat{b_{u}}- \hat{\mu}) \label{eq:bg_formula}
+\end{equation}
+
+with:
+
+* $n_{g}$: the ratings number for the genre $g$ in the train data set 
+* $\hat{b_{i}}$: the estimation of movie bias $b_{i}$ in the train data set **\eqref{eq:bi_formula}**
+* $\hat{b_{u}}$: the estimation of user bias $b_{u}$ in the train data set **\eqref{eq:bu_formula}**
+* $\hat{\mu}$: the overall average in the train data set
+
+Our estimated rating is:
+
+\begin{equation}
+\hat{y}_{u, i} = \hat{\mu} + \hat{b}_{i} + \hat{b}_{u} + \hat{b}_{g}  \label{eq:bg_prediction_formula}
+\end{equation}
+
+The RMSE equation becomes:
+
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - (\hat{\mu} + \hat{b}_{i} + \hat{b}_{u} + \hat{b}_{g} )) ^2 }  \label{eq:rmse_bg_formula}
+\end{equation}
+
+\clearpage
+
+This code computes the estimated genre bias in the train set using the formula **\eqref{eq:bg_formula}**:
+```{r genre bias, echo=TRUE,eval=FALSE,warning=FALSE,include = TRUE}
+# genres bias estimation on train set
+genre_bias <- train_set_sep %>%
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  group_by(genres) %>%
+  summarize(beta_g = mean(rating - mu_hat - bi_hat - bu_hat))
+```
+
+We can compute the prediction in the test set using the formula **\eqref{eq:bg_prediction_formula}**:
+
+```{r genre bias prediction, echo=TRUE,eval=FALSE,warning=FALSE,include=TRUE}
+prediction_test <- test_set_sep %>%
+  left_join(genre_bias, by = "genres") %>%
+  group_by(userId, movieId) %>%
+  summarize(bg_hat = sum(beta_g)) %>%  #Sum all the genre bias
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  left_join(test_set, by = c("userId", "movieId")) %>%
+  mutate(rating_hat = (mu_hat + bi_hat + bg_hat + bu_hat))
+```
+
+```{r result genre bias, echo=FALSE, eval=TRUE}
+rmse_test <- genre_bias_model$rmse 
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Movies/Users/Genres effects", 
+                                 rmse_test = rmse_test,
+                                 perc_test= 100 * (last(rmse_results$rmse_test) - rmse_test)/last(rmse_results$rmse_test)))
+```
+
+Now we have the predicted ratings on test set, we can compute the RMSE using the formula **\eqref{eq:rmse_bg_formula}**. We obtain RMSE=`r rmse_test` which is `r round(last(rmse_results$perc_test),2)` % lower than the previous result.
+```{r gc4,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(genre_avg_range,rmse_test)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+## Temporal Effect
+The "_MovieLens_" provides two date information:
+
+* the rating date in the variable "_timestamp_"
+* the movie's year, in the variable "_title_", between "_(_" and "_)_"
+
+Before examine temporal effect, we need to add new variable "_years_" to our data set. This observation represents the years number between the movie's year and the rating date.  
+
+Let's explore the effect of those temporal information.
+
+\vspace{+3truemm}
+
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r get time model, eval=TRUE,echo=FALSE}
+time_bias_model <- get_time_bias_model(train_set,test_set,train_set_sep,test_set_sep,lambda=0,genre_bias_model)
+```
+
+```{r  avg per ratings,include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure',warning=FALSE,message=FALSE}
+train_set %>% 
+  group_by(movieId) %>% 
+  summarize(n = n(), years = year(now())  - first(years),
+            rating = mean(rating)) %>%
+  mutate(rate = n/years) %>%
+  ggplot(aes(rate, rating)) +
+  geom_point() +
+  geom_hline(yintercept = mu_hat, color="cyan2", linetype="twodash") +
+  geom_smooth() +
+  theme_bw() +
+  labs(title="Rating avergae by movie's ratings per year", y="Rating average", x="Ratings per year")
+```
+\captionof{figure}{\label{fig:fig_avg_years_rating}Rating average by yearly ratings}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r average by age,include=TRUE, echo=FALSE, fig.show='asis',warning=FALSE, fig.keep='high',fig.env='marginfigure',message=FALSE}
+train_set %>% 
+  group_by(years) %>%
+  summarize(avg = mean(rating)) %>%
+  ggplot(aes(years, avg)) +
+  geom_point() +
+  geom_hline(yintercept = mu_hat, color="cyan2", linetype="twodash") +
+  geom_vline(xintercept = 89, color="cyan2", linetype="twodash") +
+  geom_vline(xintercept = 18, color="cyan2", linetype="twodash") +
+  theme_bw() +
+  labs(title="Rating avergae by movie's age", y="Rating average", x="{Years between ratings and movie's launch") +
+  geom_smooth()  
+```
+\captionof{figure}{\label{fig:fig_average_age}Rating Average by movie's age}
+\end{minipage}
+
+\vspace{+5truemm}
+
+The plot **\ref{fig:fig_avg_years_rating}** shows the movie's average by ratings count per year. The ratings count per year is computed using the interval between the first rating's year and the current year. We can see that movies with high yearly ratings have an average rating higher than the overall average $\hat{\mu}$. The plot **\ref{fig:fig_average_age}** shows the rating average by the years between the movie's creation and the rating date. Ratings occurred between 18 years and 89 years after the movie's creation are higher than the overall average. The smooth line shows a somehow correlation between this time period and the ratings average.  
+
+\vspace{+3truemm}
+
+Let's enhance our previous linear model and introduce a "_Temporal bias_" that represents the effect of years between movie's creation and the rating date, for this, we introduce the "_Temporal bias_":
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + b_{u}+  b_{g} + f(y_{u,i}) + \epsilon_{u,i} \nonumber
+\end{equation}
+
+with:
+
+* $\mu$: the average of all the ratings
+* $b_{i}$: the movie effect for the movie "_i_", called also _"bias"_ for movie "_i_"
+* $b_{u}$: the user effect for the user "_u_", called also _"bias"_ for user "_u_"
+* $b_{g}$: the genre effect for all the genres related to the ratings of user "_u_" to the movie "_i_"
+* $f(y_{u,i})$: the time effect; $y_{u,i}$ is years between the rating's date of the user "_u_" to the movie "_i_" and the movie creation's date. $f$ is a smooth function of $y_{u,i}$
+* $\epsilon_{u,i}$: an independent errors variables of the distribution with the mean at 0.
+
+For simplification, let's define $b_{t} = f(y_{u,i})$ as "_time bias_", our model becomes:
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i} + b_{u}+  b_{g} + b_{t} + \epsilon_{u,i} \label{eq:bt_model}
+\end{equation}
+As we have done before **\eqref{eq:calculus_naif}**, we use calculus to compute $b_{t}$ value that minimize the $RMSE$:
+$$RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - (\mu + b_{i} + b_{u} + b_{g} + b_{t})) ^2 }$$
+The optimal $b_{t}$ is:
+
+$$b_{t}=\frac{1}{n_{t}} \sum\limits^{n_{t}} (y_{u,i} - {b_{i}} - {b_{u}} - {b_{g}} - {\mu})$$
+with $n_{t}$ is the ratings number for the year $t$.  
+We can estimate $b_{t}$ on train data set: 
+\begin{equation}
+\hat{b_{t}} = \frac{1}{n_{t}} \sum\limits^{n_{t}} (y_{u,i} - \hat{b_{i}} - \hat{b_{u}} - \hat{b_{g}} - {\mu}) \label{eq:bt_formula}
+\end{equation}
+
+
+
+with:
+\vspace{-3truemm}
+
+* $n_{t}$: the ratings number for the year $t$ in the train data set 
+* $\hat{b_{i}}$: the estimation of movie bias $b_{i}$ in the train data set **\eqref{eq:bi_formula}**
+* $\hat{b_{u}}$: the estimation of user bias $b_{u}$ in the train data set **\eqref{eq:bu_formula}**
+* $\hat{b_{g}}$: the estimation of genre bias $b_{g}$ in the train data set **\eqref{eq:bg_formula}**
+* $\hat{\mu}$: the overall average in the train data set
+
+Our estimated rating is:
+\begin{equation}
+\hat{y}_{u, i} = \hat{\mu} + \hat{b}_{i} + \hat{b}_{u} + \hat{b}_{g} + \hat{b}_{t} \label{eq:bt_prediction_formula}
+\end{equation}
+
+The RMSE equation becomes:
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum_{u,i} (y_{u,i} - (\hat{\mu} + \hat{b}_{i} + \hat{b}_{u} + \hat{b}_{g} + \hat{b}_{t})) ^2 } \label{eq:rmse_bt_formula}
+\end{equation}
+This code computes the estimated time bias in the train set using the formula **\eqref{eq:bt_formula}**:
+```{r time bias, echo=TRUE,eval=FALSE,warning=FALSE,include=TRUE}
+# time bias estimation on train set  
+time_bias <- train_set_sep %>%
+  left_join(genre_bias, by = "genres") %>%
+  group_by(userId, movieId) %>%
+  summarize(bg_hat = sum(beta_g)) %>%  #Sum all the genre biais
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  left_join(train_set, by = c("userId", "movieId")) %>%
+  group_by(years) %>%
+  summarize(bt_hat = mean(rating - mu_hat - bi_hat - bg_hat - bu_hat))
+```
+We can compute the prediction in the test set using the formula **\eqref{eq:bt_prediction_formula}**:
+```{r time bias prediction, eval=FALSE, echo=TRUE, warning=FALSE, include=TRUE}
+# compute the predicted rating on test set using the movie, genres, user and time effects
+prediction_test <- test_set_sep %>%
+  left_join(genre_bias, by = "genres") %>%
+  group_by(userId, movieId) %>%
+  summarize(bg_hat = sum(beta_g)) %>%  #Sum all the genre biais
+  left_join(test_set, by = c("userId", "movieId")) %>%
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  left_join(time_bias, by = "years") %>%
+  mutate(rating_hat = (mu_hat + bi_hat + bg_hat + bu_hat + bt_hat))
+```
+
+```{r result time bias, echo=FALSE, eval=TRUE}
+rmse_test <- time_bias_model$rmse
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Movies/Users/Genres/Time effects", 
+                                 rmse_test = rmse_test,
+                                 perc_test= 100 * (last(rmse_results$rmse_test) - rmse_test)/last(rmse_results$rmse_test)))
+```
+Now we have the predicted ratings on test set, we can compute the RMSE using the formula **\eqref{eq:rmse_bt_formula}**. We obtain RMSE=`r rmse_test` which is `r round(last(rmse_results$perc_test),2)` % lower than the previous result.
+
+```{r gc5,echo=FALSE,results='hide',warning=FALSE,error=FALSE}
+rm(rmse_test)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+\clearpage
+
+## Regularization
+```{r get bias regularization, echo=FALSE, eval=TRUE,include=FALSE}
+#clean all previous model
+rm(naive_model,movie_bias_model,user_bias_model,genre_bias_model,time_bias_model)
+bias_regularized_model <- get_bias_regularized_model(train_set,test_set,train_set_sep,test_set_sep,lambdas)
+```
+
+\begin{wrapfigure}{r}{0.5\textwidth}
+```{r rating age distribution, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure',message=FALSE} 
+
+train_set %>% 
+  ggplot(aes(years)) +
+  geom_histogram(bins=100) +
+  theme_bw() +
+  labs(title="Rating count by movie's age")
+```
+\caption{\label{fig:fig_rating_age_count}Rating age count}
+\end{wrapfigure}
+
+$~$
+
+$~$
+
+As we saw in figure **\ref{fig:fig_movie_rating_count}**, many movies has few ratings. This could be introduce errors to our model because some movies has more significant representation than others, but the model doesn't consider any associated weight. 
+
+$~$
+
+Figures **\ref{fig:fig_user_avg_distribution}**, **\ref{fig:fig_genre_boxplot}** and **\ref{fig:fig_rating_age_count}** , respectively, show the same for users, movie's genre and years between the movie's launch date and the rating date.  
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+$~$
+
+To control the total variability of the effects, we penalize the RMSE **\eqref{eq:rmse_bt_formula}** by adding a term that get larger when many bias components are larger and shrink the estimation for statistically non significant ratings:
+
+\begin{equation}
+RMSE = \sqrt{ \frac{1}{N} \sum\limits_{u,i}^N (y_{u,i} - (\hat{\mu} + \hat{b}_{i} + \hat{b}_{u} + \hat{b}_{g} +  \hat{b}_{t})) ^2  + \frac{\lambda}{N} (\sum^{n_{i}}\hat{b}_{i}^2 + \sum^{n_{u}}\hat{b}_{u}^2 + \sum^{n_{g}}\hat{b}_{g}^2 +  \sum^{n_{t}}\hat{b}_{t}^2)} \label{eq:rmse_regul_formula}
+\end{equation}
+
+with $\lambda$, the regularization coefficient.  
+
+\vspace{+1truemm}
+
+Let's compute the $b_{i}$ value that minimize the RMSE formula **\eqref{eq:rmse_regul_formula}** using incremental approach:
+
+1. first we add $b_{i}$ penalty: $RMSE = \sqrt{ \frac{1}{N} \sum\limits_{u,i}^N (y_{u,i} - ({\mu} + {b}_{i} )) ^2  + \frac{\lambda}{N} \sum\limits^{n_{i}}{b}_{i}^2}$
+2. compute $b_{i}$ that minimizes this RMSE 
+3. add $b_{u}$ penalty: $RMSE =\sqrt{ \frac{1}{N} \sum\limits_{u,i}^N (y_{u,i} - ({\mu} + {b}_{i} + {b}_{u} )) ^2  + \frac{\lambda}{N}( \sum\limits^{n_{i}}{b}_{i}^2+\sum\limits^{n_{u}}{b}_{u}^2)}$
+4. compute $b_{u}$ that minimizes this RMSE using the optimal $b_{i}$ value obtained in step "_2_"
+5. add $b_{g}$ penalty: $RMSE = \sqrt{ \frac{1}{N} \sum\limits_{u,i}^N (y_{u,i} - ({\mu} + {b}_{i} + {b}_{u} + {b}_{g})) ^2  + \frac{\lambda}{N}( \sum\limits^{n_{i}}{b}_{i}^2+\sum\limits^{n_{u}}{b}_{u}^2+\sum\limits^{n_{g}}{b}_{g}^2)}$
+6. compute $b_{g}$ that minimizes this RMSE using the optimal $b_{i}$ and $b_{u}$ obtained in steps "_2_" and "_4_"
+7. add $b_{t}$ penalty: $RMSE = \sqrt{ \frac{1}{N} \sum\limits_{u,i}^N (y_{u,i} - ({\mu} + {b}_{i} + {b}_{u} + {b}_{g}+ {b}_{t})) ^2  + \frac{\lambda}{N}( \sum\limits^{n_{i}}{b}_{i}^2+\sum\limits^{n_{u}}{b}_{u}^2+\sum\limits^{n_{g}}{b}_{g}^2+\sum\limits^{n_{t}}{t}_{t}^2)}$
+8. compute $b_{t}$ that minimizes this RMSE using the optimal $b_{i}$, $b_{u}$ and $b_{g}$ obtained in step 2, 4 and 6
+
+Let's compute $b_{i}$, to simplify, minimizing $RMSE$ function is equivalent to minimize $RMSE^2$ (also called **MSE**, the **M**ean **S**quare **E**rror): 
+
+\clearpage
+
+$$
+\begin{aligned}
+\operatorname*{argmin}_{b_{i}} RMSE &=\operatorname*{argmin}_{b_{i}} MSE \\
+&=\operatorname*{argmin}_{b_{i}} \frac{1}{N} \sum\limits^{n_{i}} (y_{u,i} - ({\mu} + {b}_{i})) ^2  + \frac{\lambda}{N} \sum^{n_{i}}{b}_{i}^2  \\
+&= \operatorname*{argmin}_{b_{i}} \sum\limits^{n_{i}} (y_{u,i} - ({\mu} + {b}_{i} )) ^2  + \lambda \sum^{n_{i}}{b}_{i}^2 
+\end{aligned}
+$$
+
+with $n_{i}$ is the ratings number for the movie $i$.  
+Our minimum is the  $b_{i}$ value that make the derivative of this function equals to zero:
+
+$$
+\begin{aligned}
+\frac{\partial\Biggr(\sum\limits^{n_{i}} (y_{u,i} - ({\mu} + {b}_{i} )) ^2  + \lambda \hat{b}_{i}^2\Biggr)}{\partial{b_{i}}}
+&= -2 \sum\limits^{n_{i}} (y_{u,i} - ({\mu} + {b}_{i})) +2\lambda{b_{i}} = 0 \\
+\iff&  \sum\limits^{n_{i}} (y_{u,i} - \mu ) - \sum\limits^{n_{i}}{b_{i}} = \lambda{b_{i}}\\
+\iff& b_{i} = \frac{1}{\lambda+n_{i}}\sum\limits^{n_{i}} (y_{u,i} - \mu ) 
+\end{aligned}
+$$
+We can estimate $b_{i}$ on train data set:
+
+\begin{equation}
+\hat{b}_{i} = \frac{1}{(\lambda + n_{i})} \sum\limits^{n_{i}} (Y_{u,i} - \hat{\mu}) \nonumber
+\end{equation}
+
+
+Applying similar calculus we get the optimal $b_{u}$, $b_{g}$ and $b_{t}$. So we have:
+\vspace{-2.5truemm}
+\begin{eqnarray}   
+\hat{b}_{i}(\lambda) &=& \frac{1}{(\lambda + n_{i})} \sum\limits^{n_{i}} (Y_{u,i} - \hat{\mu}) \label{eq:bi_regul_formula}\\
+\hat{b}_{u}(\lambda) &=& \frac{1}{(\lambda + n_{u})} \sum\limits^{n_{u}} (Y_{u,i} - \hat{b}_{i}(\lambda) - \hat{\mu}) \label{eq:bu_regul_formula}\\
+\hat{b}_{g}(\lambda) &=& \frac{1}{(\lambda + n_{g})} \sum\limits^{n_{g}} (Y_{u,i} - \hat{b}_{u}(\lambda) - \hat{b}_{i}(\lambda) - \hat{\mu}) \label{eq:bg_regul_formula}\\
+\hat{b}_{t}(\lambda) &=& \frac{1}{(\lambda + n_{t})} \sum\limits^{n_{t}} (Y_{u,i} - \hat{b}_{g}(\lambda) - \hat{b}_{u}(\lambda) - \hat{b}_{i}(\lambda) - \hat{\mu}) \label{eq:bt_regul_formula}
+\end{eqnarray}
+
+with:
+
+* $\lambda$: the regularization coefficient.
+* $n_{i}$: the ratings number for the movie $i$ in the train data set
+* $n_{u}$: the ratings number of the user $u$ in the train data set
+* $n_{g}$: the ratings number for the genre $g$ in the train data set
+* $n_{t}$: the ratings number for the year $t$ in the train data set
+* $\hat{b_{i}}$: the estimation of movie bias $b_{i}$ in the train data set **\eqref{eq:bi_formula}**
+* $\hat{b_{u}}$: the estimation of user bias $b_{u}$ in the train data set **\eqref{eq:bu_formula}**
+* $\hat{b_{g}}$: the estimation of genre bias $b_{g}$ in the train data set **\eqref{eq:bg_formula}**
+* $\hat{b_{t}}$: the estimation of time bias $b_{t}$ in the train data set **\eqref{eq:bt_formula}**
+* $\hat{\mu}$: the overall average in the train data set
+
+Our linear model becomes:
+
+\begin{equation}
+Y_{u,i} = \mu + b_{i}(\lambda) + b_{u}(\lambda) +  b_{g}(\lambda) + b_{t}(\lambda) + \epsilon_{u,i} \label{eq:regul_model}
+\end{equation}
+Our estimated rating is:
+
+\begin{equation}
+\hat{y}_{u, i} = \hat{\mu} + \hat{b}_{i}(\lambda) + \hat{b}_{u}(\lambda) + \hat{b}_{g}(\lambda) + \hat{b}_{t}(\lambda) \label{eq:regul_prediction_formula}
+\end{equation}
+With this regularization, when our $n_{i}$ is very large, a case which will give us a stable estimate, then the penalty $\lambda$ is not significant since $n_{i} + \lambda \approx n_{i}$. However, when the $n_{i}$ is small, then the $\hat{b}_{i}(\lambda)$ is shrunken towards 0. The larger ${\lambda}$, the more we shrink. The same applies for $n_{u}$, $n_{g}$ and $n_{t}$.  
+
+\vspace{+3truemm}
+
+To get the optimal $\lambda$ value, we iterate over a list of $\lambda$ values, we compute the RMSE using the formula **\eqref{eq:rmse_bt_formula}** and we pick up the $\lambda$ associated to the minimum RMSE. Notice that we use the classical RMSE formula and not the one with added regularization terms **\eqref{eq:rmse_regul_formula}**; in fact, our bias are already regulated using the formulas above **\eqref{eq:bi_regul_formula}** to **\eqref{eq:bt_regul_formula}** 
+
+\vspace{+3truemm}
+
+This code computes the estimated regulated movie bias in the train set using the formula  **\eqref{eq:bi_regul_formula}**:
+
+```{r bi_regul_formula, eval=FALSE,echo=TRUE,include=TRUE}
+movie_bias <- train_set %>% group_by(movieId) %>%
+  summarize(bi_hat = sum(rating - mu_hat) / (lambda + n()))
+```
+
+This code computes the estimated regulated user bias in the train set using the formula **\eqref{eq:bu_regul_formula}**:
+
+```{r bu_regul_formula, eval=FALSE,echo=TRUE,include=TRUE}
+user_bias <- train_set %>%
+  left_join(movie_bias, by = "movieId") %>%
+  group_by(userId) %>%
+  summarize(bu_hat = sum(rating - mu_hat - bi_hat) / (lambda + n()))
+```
+This code computes the estimated regulated genre bias in the train set using the formula **\eqref{eq:bg_regul_formula}**:
+
+```{r bg_regul_formula, eval=FALSE,echo=TRUE,include=TRUE}
+genre_bias <- train_set_sep %>%
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  group_by(genres) %>%
+  summarize(beta_g = sum(rating - mu_hat - bi_hat - bu_hat) / (lambda + n()))
+```
+This code computes the estimated regulated time bias in the train set using the formula **\eqref{eq:bt_regul_formula}**:
+
+```{r bt_regul_formula,eval=FALSE,echo=TRUE,include=TRUE}
+time_bias <- train_set_sep %>%
+  left_join(genre_bias, by = "genres") %>%
+  group_by(userId, movieId) %>%
+  summarize(bg_hat = sum(beta_g)) %>%  #Sum all the genre biais
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  left_join(train_set, by = c("userId", "movieId")) %>%
+  group_by(years) %>%
+  summarize(bt_hat = sum(rating - mu_hat - bi_hat - bg_hat - bu_hat) /
+              (lambda + n()))
+```
+We can compute the prediction in the test set using the formula **\eqref{eq:regul_prediction_formula}**:
+```{r predictio regul,eval=FALSE,eval=FALSE,echo=TRUE,include=TRUE}
+prediction_test <- test_set_sep %>%
+  left_join(genre_bias, by = "genres") %>%
+  group_by(userId, movieId) %>%
+  summarize(bg_hat = sum(beta_g)) %>%  #Sum all the genre biais
+  left_join(test_set, by = c("userId", "movieId")) %>%
+  left_join(movie_bias, by = "movieId") %>%
+  left_join(user_bias, by = "userId") %>%
+  left_join(time_bias, by = "years") %>%
+  mutate(rating_hat = (mu_hat + bi_hat + bg_hat + bu_hat + bt_hat))
+```
+
+
+```{r Regularization result,echo =FALSE,eval=TRUE}
+# The rmse value
+rmse_test <- bias_regularized_model$rmse
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Regularized Bias",
+                                 rmse_test = rmse_test,
+                                 perc_test= 100 * (last(rmse_results$rmse_test) - rmse_test)/last(rmse_results$rmse_test)))
+```
+
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r lamdas plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+ggplot(data=data.frame(lambdas = bias_regularized_model$lambdas,rmses=bias_regularized_model$rmses),
+       mapping=aes(lambdas,rmses)) +
+  geom_line(color="blue") +
+  theme_bw() + 
+  labs(title="RMSE vs Lambdas")
+```
+\captionof{figure}{\label{fig:fig_lamdas}RMSE vs Regularization factors}
+\end{minipage}
+\hfil
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r results,echo = FALSE}
+rmse_results %>% knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    align = c( "l", "c","c" )) %>%
+  kableExtra::kable_styling(
+    font_size = 8, latex_options = c( "HOLD_position" ) )
+```
+\captionof{table}{\label{tab:linear_model_results}RMSE results with linear model}
+\end{minipage}
+
+\vspace{+3truemm}
+
+Figure **\ref{fig:fig_lamdas}** shows that $\lambda$ value that minimize the RMSE is `r bias_regularized_model$lambda`. We get RMSE=`r rmse_test` which is `r round(last(rmse_results$perc_test),2)` % lower than the previous result.  
+Table **\ref{tab:linear_model_results}** shows a summary of RMSE results for all the used linear models.
+
+```{r gc6,echo=FALSE,results='hide',incldue=FALSE,warning=FALSE,error=FALSE}
+rm(rmse_test)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+## Matrix Factorization
+```{r get pca model, include=FALSE, eval=TRUE }
+# get the PCA model
+pca_model <- get_pca_model(train_set,test_set,lambdas,bias_regularized_model)
+rm(bias_regularized_model)
+```
+
+```{r pca heatmap plots, include=TRUE, echo=FALSE, eval=TRUE}
+#shortcuts
+
+# Users numbers
+sample_users_count <- min(70,n_distinct(train_set$userId) )
+# Movies numbers
+sample_movies_count <- min(35,n_distinct(train_set$movieId) )
+#shortcuts
+pca <- pca_model$pca
+mu_hat <- pca_model$bias_regularized_model$time_bias_model$genre_bias_model$user_bias_model$movie_bias_model$naive_model$mu_hat
+movie_bias <- pca_model$bias_regularized_model$time_bias_model$genre_bias_model$user_bias_model$movie_bias_model$movie_bias 
+user_bias <-pca_model$bias_regularized_model$time_bias_model$genre_bias_model$user_bias_model$user_bias
+genre_bias <- pca_model$bias_regularized_model$time_bias_model$genre_bias_model$genre_bias
+time_bias <- pca_model$bias_regularized_model$time_bias_model$time_bias
+
+#PC numbers used to compute the pca object 
+rank <- pca$rotation%>% ncol()
+
+patterns_pc_df <- data.frame(
+        pca$rotation[, 1:2],
+        movieId = movie_bias$movieId,
+        title = movie_bias %>% 
+          left_join(train_set, by = "movieId") %>% 
+          select(movieId, title) %>% 
+          distinct() %>% mutate(title =str_trunc(title, 25)) %>% 
+          pull(title),
+        stringsAsFactors = FALSE
+      )
+
+# get the userIds and the movieIds
+user_id_sample <- sample(unique(train_set$userId),sample_users_count, replace=FALSE)
+movie_id_sample <- sample(unique(train_set$movieId),sample_movies_count, replace=FALSE)
+
+# get the residuals matrix for the sample computed using regularized bias model
+residuals_sample <- train_set_sep %>% 
+  left_join(genre_bias, by="genres") %>%
+  group_by(userId,movieId) %>%
+  summarize(bg_hat=sum(beta_g)) %>%  #Sum all the genre bias
+  left_join(train_set, by=c("userId","movieId")) %>%
+  left_join(movie_bias, by="movieId") %>%
+  left_join(user_bias, by="userId") %>%
+  left_join(time_bias, by="years") %>%
+  mutate(residual = rating - (mu_hat + bi_hat + bu_hat + bg_hat + bt_hat)) %>%
+  filter(movieId %in% movie_id_sample  & userId %in% user_id_sample) %>% 
+  mutate(id=paste0(userId,"_",movieId),title=str_trunc(title,20)) %>% # truncate title for better display
+  select(userId,movieId,id,title,residual)
+# get all the possible combination (userId,movieId) of the sample data
+residuals <- expand.grid(userId=user_id_sample,movieId=movie_id_sample) %>% mutate(residual = NA,title="",id=paste0(userId,"_",movieId))
+
+#fill the residuals and title
+residuals$residual[match(residuals_sample$id,residuals$id)] <- residuals_sample$residual
+residuals$title <- str_trunc(patterns_pc_df$title[match(residuals$movieId,patterns_pc_df$movieId)],20)
+rm(residuals_sample)
+
+#Residuals plot
+p_residuals <- residuals %>% 
+  ggplot(aes(title,factor(userId),fill=residual)) +
+  scale_fill_gradientn(name = NULL,colors = RColorBrewer::brewer.pal( 11, "RdYlBu" ),na.value ="gray97")+
+  #scale_fill_gradient_tableau(palette = "Gray Warm",na.value ="transparent") +
+  geom_tile(color="transparent") +
+  theme_bw() + 
+  coord_fixed( ratio = 1 ) +
+  theme(legend.position = "bottom",
+        panel.grid = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1, vjust = .5, size=6),
+        legend.text=element_text(size=6),legend.margin=margin(0,0,0,0),
+        axis.text.y = element_text(size=6),axis.title.y = element_text(size=6),
+        axis.line = element_line( colour = "black" )) +
+  labs(title="Residuals", y="Users",x="")
+
+#compute predicted residual using PCA,transform it to a matrix
+# R_predicted =  W * T transposed of the subset of users and movie sample
+predicted_residuals_sample <- pca$x[as.character(user_id_sample),1:pca_model$optimal_rank] %*%   t(pca$rotation[as.character(movie_id_sample) , 1:pca_model$optimal_rank]) %>%  
+  as_tibble(rownames=NA) %>%  
+  rownames_to_column(var='userId') %>% melt(id.vars="userId") %>% 
+  setNames(c('userId', 'movieId', 'predicted_residual')) %>%
+  mutate(userId=as.integer(userId)) %>%
+  mutate(title=NA)
+
+# fill titles
+predicted_residuals_sample$title <- str_trunc(patterns_pc_df$title[match(predicted_residuals_sample$movieId,patterns_pc_df$movieId)],20)
+p_predicted_residuals <- predicted_residuals_sample %>% ggplot(aes(title,factor(userId),fill=predicted_residual)) +
+  #   scale_fill_gradientn(name = NULL,colors = RColorBrewer::brewer.pal( 11, "RdYlBu" ),na.value ="gray97")+
+  scale_fill_gradient2_tableau(name=NULL,palette = "Classic Red-White-Black") +
+  geom_tile(color="transparent") +
+  theme_bw() + 
+  coord_fixed( ratio = 1 ) +
+  theme(legend.position = "bottom",
+        panel.grid = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1, vjust = .5, size=6),
+        legend.text=element_text(size=6),legend.margin=margin(0,0,0,0),
+        axis.text.y = element_text(size=6),axis.title.y = element_text(size=6),
+        axis.line = element_line( colour = "black" ))+
+  labs(title="Predicted Residuals", y="Users",x="") 
+
+# use the first 15 PCs to get te weight plot
+pcs <- min(15,rank)
+p_weights <- pca$x[as.character(user_id_sample),1:pcs] %>% 
+  as_tibble(rownames=NA) %>%  
+  rownames_to_column(var='userId') %>% melt(id.vars="userId") %>% 
+  setNames(c('userId', 'pc', 'weight')) %>% mutate(userId=factor(as.numeric(userId))) %>%
+  ggplot(aes(pc,userId,fill=weight)) +
+  scale_fill_gradient2_tableau(name=NULL,palette = "Classic Orange-White-Blue Light") + #
+  geom_tile(color="transparent") +
+  theme_bw() + 
+  coord_fixed( ratio = 1 ) +
+  theme(legend.position = "bottom",
+        panel.grid = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1, vjust = .5, size=6),
+        legend.text=element_text(size=6),legend.margin=margin(0,0,0,0),
+        axis.text.y = element_text(size=6),axis.title.y = element_text(size=6),
+        axis.line = element_line( colour = "black" )) +
+  labs(title="Weights", y="Users", x="") 
+
+patterns_df_sample <- pca$rotation[as.character(movie_id_sample),1:pcs] %>% 
+  as_tibble(rownames=NA) %>%  
+  rownames_to_column(var='movieId') %>% melt(id.vars="movieId") %>% 
+  setNames(c('movieId', 'pc', 'pattern')) %>% mutate(title=NA) 
+patterns_df_sample$title <- str_trunc(patterns_pc_df$title[match(patterns_df_sample$movieId,patterns_pc_df$movieId)],20)  
+p_patterns <- patterns_df_sample %>%  ggplot(aes(title,pc,fill=pattern)) +
+  scale_fill_gradient2_tableau(name=NULL,palette = "Orange-Blue-White Diverging") + #
+  geom_tile(color="transparent") +
+  theme_bw() + 
+  coord_fixed( ratio = 1 ) +
+  theme(legend.position = "bottom",legend.text=element_text(size=6), 
+        panel.grid = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.text.x = element_text(angle = 90,hjust = 1, vjust = .5, size=6),
+        axis.text.y = element_text(size=6),legend.margin=margin(0,0,0,0),
+        axis.line = element_line( colour = "black" )) +
+  labs(title ="Transposed Patterns",x="",y="")
+rm(pca,train_set_sep,test_set_sep,mu_hat,genre_bias,time_bias)
+```
+Right now we used linear model with regularization to compute the estimated ratings. We will now use matrix factorization techniques on the residual $r_{u,i}$ obtained from the last linear model **\eqref{eq:regul_model}** : 
+\begin{eqnarray}
+r_{u,i} &=& y_{u , i}  - \hat{y}_{u, i} \nonumber\\
+r_{u,i} &=& y_{u , i} - (\hat{\mu} + \hat{b}_{i}(\lambda) + \hat{b}_{u}(\lambda) + \hat{b}_{g}(\lambda) + \hat{b}_{t}(\lambda)) \label{eq:residuals}
+\end{eqnarray}
+
+On train set, This matrix has $u$=`r nrow(user_bias)` rows (users) and $i$=`r nrow(movie_bias)` columns (movies), it's be very sparse, it contains NAs for missing ratings.  
+
+Inside the matrix, it exists many groups of somehow correlated users and movies. For example, users that like the same genre of movies (or the same principal actor) and rate them higher, or "_nerd_" users with a specific tendencies. Those trends could be infinite inside a big matrix like our rating matrix. We could use dimension reduction while preserving the important characteristics of the data.  
+
+\vspace{+2truemm}
+
+**P**rimary **C**omponents **A**nalysis (**PCA**) is  an orthogonal linear transformation that permits us to decompose our matrix into 2 smallest matrices $P$ and $Q$ where $R \approx W * P^T$
+with :
+
+* $W$ : $u$-by-$rank$ "weights" matrix 
+* $P$ : $i$-by-$rank$ "pattern" matrix 
+
+where "$rank$" is the primary component numbers, $rank <= \min(u,i)$. 
+
+We could compute residuals using the $W$ and $P$ matrices:
+
+\begin{eqnarray}
+R &\approx& W_{rank} * P_{rank}^T \nonumber\\
+\hat{r}_{u,i} &\approx& \sum_{q=1}^{rank} (w_{u,q}*p_{q,i}) \label{eq:residuals_pca}
+\end{eqnarray}
+
+Our model becomes:
+
+\begin{equation}
+Y_{u, i} = \mu + b_{i}(\lambda) + b_{u}(\lambda) +  b_{g}(\lambda) + b_{t}(\lambda) + \sum_{q=1}^{rank} (w_{u,q}*p_{q,i}) +\epsilon_{u,i} \label{eq:pca_model} 
+\end{equation}
+
+Our estimated rating is:
+
+\begin{equation}
+\hat{y}_{u, i} = \hat{\mu} + \hat{b}_{i}(\lambda) + \hat{b}_{u}(\lambda) + \hat{b}_{g}(\lambda) + \hat{b}_{t}(\lambda) + \sum_{q=1}^{rank} (w_{u,q}*p_{q,i}) \label{eq:pca_estimate}
+\end{equation}
+
+
+PCA allows us to summarize information relative to correlated users and movies  with a limited number of uncorrelated factors called "_Primary Components_". It permits us to detect patterns between group of users and group of movies, explaining for the variation without losing too much information in the true ratings. 
+
+\vspace{+2truemm}
+
+Figure **\ref{fig:fig_pca_analisys}** shows results heatmaps of PCA for a random sample of "`r sample_users_count`" users, "`r sample_movies_count`" movies and the first "`r pcs`" principal components.  
+
+The first plot shows the residuals matrix of our linear model computed using the formula **\eqref{eq:residuals}**. We can notice how sparse is the matrix because of missing rating (gray colored space). Residuals vary from "`r round(range(residuals$residual,na.rm=TRUE)[1],2)`" to "`r round(range(residuals$residual,na.rm=TRUE)[2],2)`", they are not really centered on zero. We can definitively optimize furthermore our linear model.  
+
+The next plot shows the residuals matrix heatmap computed using PCA **\eqref{eq:residuals_pca}**. The residuals are more likely zero centered, and they vary from "`r round(range(predicted_residuals_sample$predicted_residual)[1],2)`" to "`r round(range(predicted_residuals_sample$predicted_residual)[2],2)`", it's a narrow range.  
+
+The two last plots show respectively the weights and the transpose of patterns, the product of the two represented matrices is the matrix presented in the previous plot
+
+\newgeometry{left=0cm,right=0cm,top=1.2cm,bottom=1.2cm}
+
+\Begin{landscape}
+
+\begin{minipage}{.24\linewidth}
+```{r residuals plot, include=TRUE, echo=FALSE, fig.show='asis',fig.keep='high',fig.width=3, fig.height=8,fig.env='marginfigure'}
+p_residuals
+```
+\end{minipage}
+\hfill
+\begin{minipage}{.24\linewidth}
+```{r predicted residuals, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',  fig.width=3, fig.height=8,fig.env='marginfigure'}
+p_predicted_residuals
+```
+\end{minipage}
+\hfill
+\begin{minipage}{.24\linewidth}
+```{r weights plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',  fig.width=2.5, fig.height=6,fig.env='marginfigure'}
+p_weights
+```
+\end{minipage}
+\hfill
+\begin{minipage}{.26\linewidth}
+```{r patterns plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',  fig.width=3.5, fig.height=8,fig.env='marginfigure'}
+p_patterns
+```
+\end{minipage}
+\captionof{figure}{\label{fig:fig_pca_analisys}Principal Components Analysis - Heatmaps}
+
+\End{landscape}
+
+\restoregeometry
+
+\newgeometry{left=1in,right=1in,top=1in,bottom=1in}
+```{r intercept, echo=FALSE,eval=TRUE}
+# The maximun number of possibles PC
+max_rank <- length(pca_model$pca$sdev)
+x_intercept <- min(165,max_rank)
+variance_cumul_pc <- min(2000,max_rank)
+pca_variance_df <- data.frame(Rank = 1:length(pca_model$pca$sdev),
+                             variance=summary(pca_model$pca)$importance[1, ],
+                             variance_perc=summary(pca_model$pca)$importance[2, ],
+                             variance_cum_perc=summary(pca_model$pca)$importance[3, ])
+```
+
+For each principal component(PC), figure **\ref{fig:fig_variance_explained}** shows the variance value (or standard deviation), the variance percentage and the cumulative sum of variance percentage also called "_Variance explained_". We can get until "`r max_rank`" principal components, which is in our case, the movies number or the rating matrix column number. We can see that first "`r x_intercept`" PCs has between "`r round(pca_variance_df$variance[x_intercept],2)`" and "`r round(pca_variance_df$variance[1],2)`" as  variance. PC rank of "`r min(which(pca_variance_df$variance<0.1))`" and above has variance less than "0.1". We can see also that PC rank from "1" to "`r x_intercept`" represents "`r round(pca_variance_df$variance[1],2)`%" to "`r round(pca_variance_df$variance[x_intercept],2)`%" of the total variation. On the other hand, the cumulative variance shows that the first "`r variance_cumul_pc`" cover "`r round(pca_variance_df$variance_cum_perc[variance_cumul_pc],2)`%" of the total variability.
+
+\vspace{+2truemm}
+
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pca variabilty , include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+pca_variance_df %>% 
+  ggplot() +
+  geom_line(aes(Rank,variance, color="Variance"),size=2) +
+  geom_line(aes(Rank,variance_perc*100, color="Variance %")) +
+  geom_line(aes(Rank,variance_cum_perc, color="Variance explained")) +
+  scale_color_manual(values = c("Variance" = "cyan4", "Variance %" = "darkorange",  "Variance explained"="darkorange4")) +
+  geom_vline(xintercept = x_intercept,linetype="dashed", color="lavenderblush4") +
+  scale_y_continuous(breaks=seq(0,1.2,by=0.2))+
+  labs(title = "PC Variance",y="") +
+  theme_bw() +
+  theme(legend.position = "bottom",legend.title = element_blank())
+```
+\captionof{figure}{\label{fig:fig_variance_explained}PC Variance}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pca pcs plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+pc1_min <- nth(patterns_pc_df %>% arrange(PC1) %>% pull(PC1),10)
+pc1_max <- nth(patterns_pc_df %>% arrange(PC1) %>% pull(PC1),-10)
+pc2_min <- nth(patterns_pc_df %>% arrange(PC2) %>% pull(PC2),10)
+pc2_max <- nth(patterns_pc_df %>% arrange(PC2) %>% pull(PC2),-10)
+patterns_pc_df %>%  ggplot(aes(PC1, PC2)) + 
+  geom_point(col="blue") + 
+  geom_text_repel(mapping=aes(PC1, PC2, label=title),
+                  data = filter(patterns_pc_df,
+                                PC1 < pc1_min | PC1 > pc1_max | 
+                                PC2 < pc2_min | PC2 > pc2_max)) +
+  theme_bw() + 
+  labs(title = "Movies on PC1,PC2 axes")
+rm(pc1_max,pc1_min,pc2_max,pc2_min,max_rank,x_intercept)
+```
+\captionof{figure}{\label{fig:fig_pcs_plot}Movies projected on PC1/PC2 axes}
+\end{minipage}
+\begin{table}[!htb]
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pc1 movies top,echo = FALSE, results = 'asis',fig.height=1.5 }
+patterns_pc_df %>% arrange(desc(PC1)) %>% select(title,PC1) %>% head(10) %>% knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+
+    row.names = TRUE,
+    linesep = "",
+    align = c( "l", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8)
+```
+\captionof{table}{\label{tab:tab_pc1top}PC1 - Top 10 movies}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pc1 movies bottom,echo = FALSE, results = 'asis',fig.height=1.5  }
+patterns_pc_df %>% arrange(PC1) %>% select(title,PC1) %>% head(10) %>% knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    linesep = "",
+    align = c( "l", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8)
+```
+\captionof{table}{\label{tab:tab_pc1bottom}PC1 - Bottom 10 movies}
+\end{minipage}
+\end{table}
+\vspace{-5truemm}
+\begin{table}[!htb]
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pc2 movies top,echo = FALSE, results = 'asis',fig.height=2  }
+patterns_pc_df %>% arrange(desc(PC2)) %>% select(title,PC2) %>% head(10) %>% knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    linesep = "",
+    align = c( "l", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8)
+```
+\captionof{table}{\label{tab:tab_pc2top}PC2 - Top 10 movies}
+\end{minipage}
+\hfill
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pc2 movies bottom,echo = FALSE, results = 'asis',fig.height=2  }
+patterns_pc_df %>% arrange(PC2) %>% select(title,PC2) %>% head(10) %>% knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    linesep = "",
+    align = c( "l", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8)
+```
+
+\captionof{table}{\label{tab:tab_pc2bottom}PC2 - Bottom 10 movies}
+\end{minipage}
+\end{table}
+
+By looking at the top 10 in each direction, we see some meaningful patterns. The first principal component (PC1, the one with the highest variability) shows the difference between "Critically Acclaimed" movies (table **\ref{tab:tab_pc1top}**) on one side and "Hollywood blockbusters" on the other side (table **\ref{tab:tab_pc1bottom}**).  
+Similarly for PC2, table **\ref{tab:tab_pc2top}** shows a common pattern of "Science Fiction" movies, and table **\ref{tab:tab_pc2bottom}** a tendency for "Drama" movies.  
+
+\vspace{+2truemm}
+
+Figure **\ref{fig:fig_pcs_plot}** shows movies patterns for the two first principal components (PC1/PC2) and some movie's titles for extreme values. We can confirm the tendency observed above by examining titles in every axis's extremes.
+
+\vspace{+2truemm}
+
+We compute the optimal "$rank$", the "Primary Components" rank, that minimizes the loss (**RMSE**) using the following algorithm:
+
+\vspace{+2truemm}
+
+\begin{algorithm}[H]
+\SetKwData{Rmses}{rmses}
+\SetKwFunction{RMSE}{RMSE}
+\SetAlgoLined
+\KwResult{The optimal principal components value }
+
+1. on train set: compute the estimated linear rating ($linear\_ratings$)  using the linear model \eqref{eq:regul_model}\;
+2. on train set: compute the $residuals$, it's the difference between the true rating and the estimated one \eqref{eq:residuals}:
+ $$residuals=true\_ratings - linear\_ratings$$
+
+3. generate the residual matrix $R$\ from $residuals$\;
+4. using PCA on residuals matrix $R$, get wights ($W$) and patterns matrix ($P$)\;
+5. on test: compute the estimated linear ratings $\hat{linear\_ratings}$ using linear model \eqref{eq:regul_model}\;  
+6. \For{$rank\leftarrow 1$ \KwTo $max_{rank}$}{
+6.1. compute the new residuals matrix using matrix multiplication \eqref{eq:residuals_pca}:
+$$R_{pca} =W_{rank} * P^T_{rank}$$ 
+6.2. in test set: compute the new estimated rating: the sum of the estimated rating $\hat{ratings}$ and the residuals $R$ computed previously with PCA \eqref{eq:pca_estimate}:
+
+$$\hat{ratings} = \hat{ratings} + R$$
+6.3. in test set, compute RMSE between true rating and the estimated rating:\
+
+\Rmses$\leftarrow$ \RMSE{$true\_ratings$,$\hat{ratings}$}\;
+}
+7. $rmse_{min} = min(rmses)$\;
+   $rank_{optimal} = which(rmse)$\;
+   The optimal rank is the rank corresponding to the $rmse_{min}$;\
+\caption{Optimal rank for PCA}
+\end{algorithm}
+
+```{r rmse_results ,echo = FALSE }
+rmse_test <- pca_model$rmse
+rmse_results <- bind_rows(rmse_results,
+                          tibble(method = "Regularized Bias + PCA", 
+                                 rmse_test = rmse_test,
+                                 perc_test= 100 * (last(rmse_results$rmse_test) - rmse_test)/last(rmse_results$rmse_test)))
+```
+
+\begin{minipage}[t]{0.5\linewidth}
+
+\vspace{-3truecm}
+
+Figure \ref{fig:pca_rmse_plot} shows that the rank value that optimize RMSE is `r pca_model$optimal_rank`, and the RMSE is `r rmse_test`. We can notice that those first `r pca_model$optimal_rank` 'PCs
+' represents only `r round(pca_variance_df$variance_cum_perc[pca_model$optimal_rank],2)` % of the total variation.    
+With this model, we got a significant reduction of `r round(last(rmse_results$perc_test),2) `%.
+
+\end{minipage}
+\hfill
+\hspace*{0.25 cm}
+\begin{minipage}{0.5\linewidth}
+\centering
+```{r pca rmse plot, include=TRUE, echo=FALSE, fig.show='asis', fig.keep='high',fig.env='marginfigure'}
+data.frame(Rank=1:rank,RMSE=pca_model$rmses) %>% 
+  ggplot(aes(Rank,RMSE)) +
+  geom_line(col="navyblue") +
+  geom_vline(xintercept = pca_model$optimal_rank,color="orange3", linetype="twodash") +
+  geom_hline(yintercept = pca_model$rmse,color="orange4", linetype="dashed") +
+  scale_y_continuous(breaks = pca_model$rmses[c(1,12,pca_model$optimal_rank,100)]) +
+  scale_x_continuous(breaks =c(0,25,pca_model$optimal_rank,75,100)) +
+  theme_bw() +
+  labs(title = "RMSE vs Rank")
+```
+\captionof{table}{\label{fig:pca_rmse_plot}RMSE vs PC Ranks}
+\end{minipage}
+```{r gc7,echo=FALSE,results='hide',warning=FALSE,error=FALSE,message=FALSE}
+rm(patterns_pc_df, p_residuals,p_predicted_residuals,p_weights,p_patterns,variance_cumul_pc,sample_users_count,sample_movies_count,user_id_sample,movie_id_sample,residuals,predicted_residuals_sample,pcs,patterns_df_sample,rmse_test,pca_variance_df,rank)
+rm(movie_bias,user_bias,train_set,test_set)
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+\clearpage
+
+# Results
+
+No we have a trained and tested model. We could now compute apply it on the validation data sets that it was never used. 
+```{r rmse_results_train,echo = FALSE, results = 'asis' }
+rmse_results %>% knitr::kable(
+  format = "latex", 
+  booktabs = TRUE,
+  row.names = TRUE,
+  linesep = "",
+  align = c( "c", "c", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8, latex_options = c( "HOLD_position" ))
+```
+\captionof{table}{\label{tab:rmse_results_train}Train results}
+
+\vspace{+5truemm}
+```{r rmse_results_validation1,echo=FALSE,eval=TRUE}
+validation_result <- get_validation_result(validation_set, pca_model)
+```
+
+Table **\ref{tab:rmse_results_train}** shows the summary of the results for each model on test data set.  
+
+\vspace{+2truemm}
+
+Table **\ref{tab:rmse_results_validation}** shows the final results on the validation data set. We got an RMSE=`r validation_result$rmse`, it's a bit lower than the test set result (`r round(1000 * (validation_result$rmse - last(rmse_results$rmse_test))/last(rmse_results$rmse_test),2)`‰).
+```{r rmse_results_validation2,echo = FALSE, results = 'asis' }
+rmse_validation <- validation_result$rmse
+tibble(method = "Regularized Bias + PCA", 
+       rmse = rmse_validation) %>% 
+  knitr::kable(
+    format = "latex", 
+    booktabs = TRUE,
+    row.names = TRUE,
+    linesep = "",
+    align = c( "c", "c" )) %>%
+  kableExtra::kable_styling(font_size = 8, latex_options = c( "HOLD_position" ))
+```
+\captionof{table}{\label{tab:rmse_results_validation}Validation results}
+
+\vspace{+2truemm}
+
+It takes almost 15 hours to train the model on a MacBook Pro, Processor 2.8 GHz Intel Core i7, 16 GB RAM, 1 TB SSD Hard Drive.  
+Operating system is iOs 10.13.6, R version is 3.6.3. For Matrix computation, the default R version of "LAPACK" library is used  and the Apple's "BLAS" library from their accelerated Framework.  
+With such amount of data, R process grows up to 35 GB of memory, it's mandatory to extend the size of the virtual memory allowed to the process. To do this, we define a variable $R\_MAX\_VSIZE=100Gb$ in a file called $.Renviron$ in the home directory
+```{r gc8,echo=FALSE,results='hide',warning=FALSE,error=FALSE,message=FALSE}
+gc( reset = TRUE, full = TRUE, verbose = FALSE )
+```
+
+
+\clearpage
+
+# Conclusion
+Combining Linear model and Matrix Factorization we do reduce our RMSE on test set by `r round(100 * (rmse_validation - first(rmse_results$rmse_test)/first(rmse_results$rmse_test)),2)` %. We got a slightly lower results on validation set, it's still a good performance and we could assume that our model was not overtrained.  
+
+\vspace{+3truemm}
+
+We could have have enhance our model by doing regularization on principal components weights and patterns vectors. Our model **\eqref{eq:pca_model}** becomes:
+
+$$
+Y_{u, i} = \mu + b_{i}(\lambda) + b_{u}(\lambda) +  b_{g}(\lambda) + b_{t}(\lambda) + \sum_{q=1}^{rank} (w_{u,q}*p_{q,i}) + \beta (\sum^{rank}w_{u}^2 + \sum^{rank}p_{i}^2)  +\epsilon_{u,i}
+$$
+
+\vspace{+3truemm}
+
+where $\beta$ is the regularization factor for the principal components.  
+
+\vspace{+3truemm}
+
+Cross Validation could also be applied over this big data set, and would assure a more stable error estimation.
+
+```{r clean final,echo=FALSE,results='hide',warning=FALSE,error=FALSE,message=FALSE}
+rm(validation_result,validation_set,rmse_results,rmse_validation,dev,sample,lambdas,pca_model_file)
+```
+
+
+
