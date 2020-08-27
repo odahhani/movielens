@@ -348,13 +348,13 @@ get_bias_regularized_model <-function(train_set,
                                       train_set_sep,
                                       test_set_sep,
                                       lambdas) {
-  dev <- T
+  compute <- T
   # If you want to skip long computation the regularization results fron the data file provided in rdas directory
-  # switch dev to TRUE
+  # switch compute to TRUE
   t1 <- Sys.time()
   
   # Compute RMSE for lambdas list using the time bias model
-  if (dev) {
+  if (compute) {
     # we do computation
     rmses <- sapply(lambdas, function(l) {
       print(paste0("Regularization, lambda=", l))
@@ -455,10 +455,10 @@ get_pca_model <- function(train_set,
   genre_bias <-
     bias_regularized_model$time_bias_model$genre_bias_model$genre_bias
   time_bias <- bias_regularized_model$time_bias_model$time_bias
-  dev <- T
+  compute <- T
   # If you want to skip long computation and load the PCA from the data file proivided in rdas directory
-  # switch dev to TRUE
-  if (dev) {
+  # switch compute to TRUE
+  if (compute) {
     # compute residuals on train set and create a matrix of (row=user,col=movie) residuals
     residuals_matrix <- get_bias_model_prediction(train_set,
                                                   train_set_sep,
@@ -483,7 +483,7 @@ get_pca_model <- function(train_set,
   rank <- min(100, nrow(movie_bias), nrow(user_bias))
   t0 <- Sys.time()
   #If PCA modele data file is provided, use it to get the PCA , elsewhere, compute the PCA with prcomp
-  if (!dev && file.exists(pca_model_file)) {
+  if (!compute && file.exists(pca_model_file)) {
     load(pca_model_file)
     pca <- pca_model$pca
     rmses_pca <- pca_model$rmses
@@ -514,7 +514,7 @@ get_pca_model <- function(train_set,
      full = TRUE,
      verbose = FALSE)
   # get rating predictions matrix using the linear model
-  if (dev) {
+  if (compute) {
     bias_model_prediction <- get_bias_model_prediction(test_set,
                                                        test_set_sep,
                                                        mu_hat,
@@ -594,6 +594,8 @@ get_pca_model <- function(train_set,
 
 ## Return values: a named list of 1 entry:
 #   - rmses: the rmse on the validation set,
+#   - pca_model_prediction: a data frame with the estimated rating using 
+#                           the PCA model
 ###############################################################################
 get_validation_result <- function(validation_set, pca_model) {
   if (is.null(pca_model))
@@ -815,7 +817,7 @@ get_bias_model_prediction <- function(data_set,
 #   - pca: The principal components analysis as result of the prcomp function
 #   - r: The principal components number to be used for the prediction
 #   - bias_model_prediction: a matrix of bias model predictions for the data set
-## Return values: A data rame with the estimated rating value
+## Return values: A data frame with the estimated rating value
 #                 column "rating_hat"
 ###############################################################################
 get_pca_model_prediction <- function(data_set, pca, r, bias_model_prediction) {
@@ -844,13 +846,19 @@ pattern <- "\\((\\d{4})\\)$"
 #Regularization list parameter
 lambdas <- seq(3.5, 6, by = 0.25)
 
-# The file where is stored the PCA model
-# if you are sourcing this script from the R Markdown report,
-# You should pay attention to the location of the data file
+# pca_model_file is The file where is stored the PCA model
 # the Rmd document is inside 'doc' directory, and the data file is in 'rdas'
-# So we use the relative path "../" to step into the data directory
-#If we are running directly this script from the movielens root working dorectory, no need to use the "../"
-pca_model_file <- "../rdas/pca_model_v.1.0.rda"
+# This variable is filled to TRUE in the report file (Rmd) to indicate that
+# we are generating the report
+if (!exists("generate_report") || !generate_report) {
+  # we are executing directly the code from the project root directory
+  pca_model_file <- "rdas/pca_model_v.1.0.rda"
+ } else {
+   # we are sourcing the file from the Rmd report, so, we need to use the 
+   # relative path "../" to step into the data directory
+  pca_model_file <- "../rdas/pca_model_v.1.0.rda"
+}
+
 # Get the data from text file
 dl <- tempfile()
 print("Download data file from web page")
@@ -904,9 +912,9 @@ if (sample) {
   validation_set <- validation
 }
 rm(sample_data_sets, pattern)
-
-## If we want to build the model, and get the validation result, un-block the following block
-if (FALSE) {
+generate_model <- TRUE
+## If we are generating the report file, we don't have to build the model here
+if (!exists("generate_report") || !generate_report) {
   pca_model <- get_pca_model(train_set, test_set, lambdas)
   validation_result <-
     get_validation_result(validation_set, pca_model)
