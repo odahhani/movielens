@@ -348,7 +348,6 @@ get_bias_regularized_model <-function(train_set,
                                       train_set_sep,
                                       test_set_sep,
                                       lambdas) {
-  compute <- T
   # If you want to skip long computation the regularization results fron the data file provided in rdas directory
   # switch compute to TRUE
   t1 <- Sys.time()
@@ -455,7 +454,6 @@ get_pca_model <- function(train_set,
   genre_bias <-
     bias_regularized_model$time_bias_model$genre_bias_model$genre_bias
   time_bias <- bias_regularized_model$time_bias_model$time_bias
-  compute <- T
   # If you want to skip long computation and load the PCA from the data file proivided in rdas directory
   # switch compute to TRUE
   if (compute) {
@@ -546,7 +544,7 @@ get_pca_model <- function(train_set,
   t0 <- Sys.time()
   # for all rank values within the range [1,rank], compute the RMSE between the test set rating (true rating)
   # and the estimated rating computed on with linear model added to residuals computed with the PC transformation
-  if (!exists("rmses_pca"))
+  if (!exists("rmses_pca")) #if we loaded the object from the data file, don't compute it
     rmses_pca <- sapply(1:rank, function(k) {
       t1 <- Sys.time()
       rmse <-
@@ -898,7 +896,12 @@ gc(reset = TRUE,
    verbose = FALSE)
 #To RUN the script on a sample data set, assign TRUE to sample variable
 # Elsewhere, it's the entire movilens that will be used
-# create sample data sets
+
+#Compute regularized bias model and PCA or load them from the data file.
+# The other models (naive, user bias, movie bias, genre bias, time bias) are always computed
+compute <- T
+
+# create and use sample data sets
 sample <-F
 if (sample) {
   sample_data_sets <-
@@ -912,7 +915,6 @@ if (sample) {
   validation_set <- validation
 }
 rm(sample_data_sets, pattern)
-generate_model <- TRUE
 ## If we are generating the report file, we don't have to build the model here
 if (!exists("generate_report") || !generate_report) {
   pca_model <- get_pca_model(train_set, test_set, lambdas)
