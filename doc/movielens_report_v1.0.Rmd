@@ -1741,7 +1741,7 @@ where $\beta$ is the regularization factor for the principal components.
 Cross Validation could also be applied over this big data set, and would assure a more stable error estimation.
 
 ```{r clean final,echo=FALSE,results='hide',warning=FALSE,error=FALSE,message=FALSE}
-rm(validation_result,validation_set,rmse_results,rmse_validation,compute,sample,lambdas,pca_model_file,generate_model)
+rm(validation_result,validation_set,rmse_results,rmse_validation,compute,sample,lambdas,pca_model_file,generate_report)
 ```
 
 
